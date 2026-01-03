@@ -8,7 +8,6 @@ async function seed() {
     if (!process.env.MONGODB_URI) {
       console.error('❌ Error: MONGODB_URI is not defined in .env.local file');
       console.log('Please add your MongoDB connection string to .env.local:');
-      console.log('MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/zenvy_payroll');
       process.exit(1);
     }
 
