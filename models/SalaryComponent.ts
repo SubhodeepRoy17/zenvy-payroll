@@ -85,6 +85,6 @@ SalaryComponentSchema.pre('save', function (next) {
 });
 
 // Create a compound unique index for name + company
-SalaryComponentSchema.index({ name: 1, company: 1 }, { unique: true });
+SalaryComponentSchema.index({ name: 1, company: 1 });
 
 export default mongoose.models.SalaryComponent || mongoose.model<ISalaryComponent>('SalaryComponent', SalaryComponentSchema);

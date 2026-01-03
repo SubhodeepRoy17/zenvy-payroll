@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
 
     const data = await request.json();
 
+    console.log('Received data:', JSON.stringify(data, null, 2));
+
     // Validate required fields
     const requiredFields = [
       'name', 'email', 'employeeId', 'department', 'designation',
@@ -109,18 +111,44 @@ export async function POST(request: NextRequest) {
       isActive: true,
     });
 
-    // Create default salary component for the employee
-    const defaultSalaryComponent = await SalaryComponent.create({
+    // Check if a "Basic Salary" component already exists for this company
+    let defaultSalaryComponent = await SalaryComponent.findOne({
       name: 'Basic Salary',
+      company: company._id,
+      employee: null, // Company-level default
+    });
+
+    if (!defaultSalaryComponent) {
+      // Create a company-level default salary component
+      defaultSalaryComponent = await SalaryComponent.create({
+        name: 'Basic Salary',
+        type: 'earning',
+        category: 'basic',
+        calculationType: 'fixed',
+        value: 0, // Default value, will be updated per employee
+        employee: null, // This is a company-level template
+        company: company._id,
+        isActive: true,
+        isDefault: true,
+        isTemplate: true, // Mark as template
+      });
+    }
+
+    // Create employee-specific salary component based on the template
+    const employeeSalaryComponent = await SalaryComponent.create({
+      name: `${data.name}'s Basic Salary`,
       type: 'earning',
       category: 'basic',
       calculationType: 'fixed',
       value: data.basicSalary || 0,
-      employee: null, // This will be set after employee creation
+      employee: null, // Will be set after employee creation
       company: company._id,
       isActive: true,
       isDefault: true,
+      basedOnTemplate: defaultSalaryComponent._id,
     });
+
+    console.log('Created employee salary component:', employeeSalaryComponent._id);
 
     // Create employee record
     const employee = await Employee.create({
@@ -143,7 +171,7 @@ export async function POST(request: NextRequest) {
       aadhaarNumber: data.aadhaarNumber,
       uanNumber: data.uanNumber,
       esiNumber: data.esiNumber || undefined,
-      salaryStructure: defaultSalaryComponent._id, // Use the created salary component ID
+      salaryStructure: employeeSalaryComponent._id, // Use the employee-specific salary component ID
       leaves: {
         earnedLeaves: 0,
         casualLeaves: data.employmentType === 'full-time' ? 12 : 0,
@@ -152,9 +180,11 @@ export async function POST(request: NextRequest) {
       isActive: true,
     });
 
+    console.log('Created employee with salaryStructure:', employee.salaryStructure);
+
     // Update salary component with employee reference
-    defaultSalaryComponent.employee = employee._id;
-    await defaultSalaryComponent.save();
+    employeeSalaryComponent.employee = employee._id;
+    await employeeSalaryComponent.save();
 
     // Update user with employee reference
     newUser.employee = employee._id;
@@ -179,7 +209,7 @@ export async function POST(request: NextRequest) {
     if (data.salaryComponents && Array.isArray(data.salaryComponents)) {
       for (const component of data.salaryComponents) {
         await SalaryComponent.create({
-          name: component.name,
+          name: `${data.name}'s ${component.name}`,
           type: component.type || 'earning',
           category: component.category || 'basic',
           calculationType: component.calculationType || 'fixed',
@@ -266,6 +296,14 @@ export async function POST(request: NextRequest) {
       // Extract the field that caused the duplicate
       const field = Object.keys(error.keyPattern)[0];
       const value = error.keyValue[field];
+      
+      // If it's a salary component duplicate, provide more specific message
+      if (field === 'name' && error.keyValue.company) {
+        return NextResponse.json(
+          ApiResponse.error(`A salary component with name "${value}" already exists for this company. Please use a unique name.`),
+          { status: 409 }
+        );
+      }
       
       return NextResponse.json(
         ApiResponse.error(`${field} '${value}' already exists`),
