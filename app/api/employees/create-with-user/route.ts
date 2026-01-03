@@ -34,6 +34,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate additional required fields from Employee schema
+    const employeeRequiredFields = [
+      'panNumber', 'aadhaarNumber', 'uanNumber'
+    ];
+    
+    for (const field of employeeRequiredFields) {
+      if (!data[field] || data[field].trim() === '') {
+        return NextResponse.json(
+          ApiResponse.error(`${field} is required`),
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate bank details
+    if (!data.bankDetails) {
+      return NextResponse.json(
+        ApiResponse.error('Bank details are required'),
+        { status: 400 }
+      );
+    }
+
+    const bankFields = [
+      'accountNumber', 'accountHolderName', 'bankName', 'branch', 'ifscCode'
+    ];
+    
+    for (const field of bankFields) {
+      if (!data.bankDetails[field] || data.bankDetails[field].trim() === '') {
+        return NextResponse.json(
+          ApiResponse.error(`Bank ${field} is required`),
+          { status: 400 }
+        );
+      }
+    }
+
     // Check if email already exists
     const existingUser = await User.findOne({ email: data.email.toLowerCase() });
     if (existingUser) {
@@ -74,13 +109,18 @@ export async function POST(request: NextRequest) {
       isActive: true,
     });
 
-    // Prepare salary structure data
-    const salaryStructureData = {
-      basicSalary: data.basicSalary || 0, // Will be set separately when configuring payroll
-      earnings: [], // Empty - to be configured later
-      deductions: [], // Empty - to be configured later
-      taxDeductions: [], // Empty - to be configured later
-    };
+    // Create default salary component for the employee
+    const defaultSalaryComponent = await SalaryComponent.create({
+      name: 'Basic Salary',
+      type: 'earning',
+      category: 'basic',
+      calculationType: 'fixed',
+      value: data.basicSalary || 0,
+      employee: null, // This will be set after employee creation
+      company: company._id,
+      isActive: true,
+      isDefault: true,
+    });
 
     // Create employee record
     const employee = await Employee.create({
@@ -92,26 +132,29 @@ export async function POST(request: NextRequest) {
       employmentType: data.employmentType,
       joiningDate: new Date(data.joiningDate),
       workLocation: data.workLocation,
-      basicSalary: 0, // Initialize as 0, will be set when configuring salary
-      bankDetails: data.bankDetails || {
-        accountNumber: '',
-        accountHolderName: data.name,
-        bankName: '',
-        branch: '',
-        ifscCode: '',
+      bankDetails: {
+        accountNumber: data.bankDetails.accountNumber,
+        accountHolderName: data.bankDetails.accountHolderName || data.name,
+        bankName: data.bankDetails.bankName,
+        branch: data.bankDetails.branch,
+        ifscCode: data.bankDetails.ifscCode.toUpperCase(),
       },
-      panNumber: data.panNumber || '',
-      aadhaarNumber: data.aadhaarNumber || '',
-      uanNumber: data.uanNumber || '',
-      esiNumber: data.esiNumber || '',
-      salaryStructure: salaryStructureData, // Store as embedded document instead of reference
+      panNumber: data.panNumber.toUpperCase(),
+      aadhaarNumber: data.aadhaarNumber,
+      uanNumber: data.uanNumber,
+      esiNumber: data.esiNumber || undefined,
+      salaryStructure: defaultSalaryComponent._id, // Use the created salary component ID
       leaves: {
         earnedLeaves: 0,
-        casualLeaves: 12, // Default 12 casual leaves per year
-        sickLeaves: 6, // Default 6 sick leaves per year
+        casualLeaves: data.employmentType === 'full-time' ? 12 : 0,
+        sickLeaves: data.employmentType === 'full-time' ? 6 : 0,
       },
       isActive: true,
     });
+
+    // Update salary component with employee reference
+    defaultSalaryComponent.employee = employee._id;
+    await defaultSalaryComponent.save();
 
     // Update user with employee reference
     newUser.employee = employee._id;
@@ -132,7 +175,7 @@ export async function POST(request: NextRequest) {
       generatedPassword = data.password;
     }
 
-    // Create salary components as separate documents (optional, only if provided)
+    // Create additional salary components if provided
     if (data.salaryComponents && Array.isArray(data.salaryComponents)) {
       for (const component of data.salaryComponents) {
         await SalaryComponent.create({
@@ -160,9 +203,8 @@ export async function POST(request: NextRequest) {
         select: 'name',
       })
       .populate({
-        path: 'salaryComponents',
-        select: 'name type value',
-        match: { isActive: true },
+        path: 'salaryStructure',
+        select: 'name type value calculationType',
       });
 
     // Create audit log
@@ -199,14 +241,12 @@ export async function POST(request: NextRequest) {
           employmentType: populatedEmployee.employmentType,
           joiningDate: populatedEmployee.joiningDate,
           workLocation: populatedEmployee.workLocation,
-          salaryStructure: populatedEmployee.salaryStructure || {},
-          basicSalary: populatedEmployee.basicSalary || 0,
+          basicSalary: populatedEmployee.salaryStructure?.value || 0,
           credentials: {
             email: data.email,
             password: generatedPassword,
             message: 'Please save this password. Employee can login with these credentials.',
             sendEmail: sendEmail,
-            // You could trigger an email service here if sendEmail is true
           },
         },
         nextSteps: [
@@ -230,6 +270,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         ApiResponse.error(`${field} '${value}' already exists`),
         { status: 409 }
+      );
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map((err: any) => err.message);
+      return NextResponse.json(
+        ApiResponse.error(`Validation failed: ${messages.join(', ')}`),
+        { status: 400 }
       );
     }
     

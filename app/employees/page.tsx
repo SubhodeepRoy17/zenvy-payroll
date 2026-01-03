@@ -79,6 +79,7 @@ export default function EmployeesPage() {
     workLocation: '',
     panNumber: '',
     aadhaarNumber: '',
+    uanNumber: '', 
     bankDetails: {
       accountNumber: '',
       accountHolderName: '',
@@ -242,6 +243,7 @@ export default function EmployeesPage() {
           workLocation: '',
           panNumber: '',
           aadhaarNumber: '',
+          uanNumber: '', 
           bankDetails: {
             accountNumber: '',
             accountHolderName: '',
@@ -528,6 +530,18 @@ export default function EmployeesPage() {
                           placeholder="1234 5678 9012"
                           value={formData.aadhaarNumber || ''}
                           onChange={(e: { target: { value: any } }) => setFormData({...formData, aadhaarNumber: e.target.value})}
+                          className="text-sm"
+                          label={undefined}
+                        />
+                      </div>
+                      <div className="space-y-1 sm:space-y-2">
+                        <Label htmlFor="uanNumber" className="text-xs sm:text-sm">UAN Number *</Label>
+                        <Input 
+                          id="uanNumber" 
+                          placeholder="123456789012"
+                          value={formData.uanNumber || ''}
+                          onChange={(e: { target: { value: any } }) => setFormData({...formData, uanNumber: e.target.value})}
+                          required
                           className="text-sm"
                           label={undefined}
                         />

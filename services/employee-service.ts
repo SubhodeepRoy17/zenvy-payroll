@@ -12,6 +12,7 @@ export interface EmployeeCreateFormData {
   workLocation: string;
   panNumber?: string;
   aadhaarNumber?: string;
+  uanNumber?: string;
   bankDetails?: {
     accountNumber?: string;
     accountHolderName?: string;
